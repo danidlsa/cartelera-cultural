@@ -300,7 +300,24 @@ El mismo evento puede llegar por Tickantel, la web de la sala, la Cartelera, el 
 - **Desde dónde corren los scrapers importa.** Con la VPN de Colombia, Ticketmaster.uy y All Access daban 403 y los sitios de la IM no respondían; desde Uruguay andan. GitHub Actions corre en EE. UU., así que **hay que probar si estos sitios aceptan sus IPs** antes de decidir. Si no, la alternativa sin costo es correr los scrapers en una máquina propia en Uruguay (una compu o una Raspberry Pi con cron) y publicar desde ahí.
 - **Prueba de conectividad**: [`scripts/check-fuentes.sh`](../scripts/check-fuentes.sh) pide cada fuente de las fases 1 a 3 con dos User-Agent (uno propio e identificable y uno de navegador) y verifica que la respuesta traiga el dato esperado. El workflow [`check-fuentes.yml`](../.github/workflows/check-fuentes.yml) corre el mismo script en GitHub Actions.
   - **Desde Uruguay (30/10/2026): 19 de 19 fuentes OK, también con el User-Agent propio.**
-  - Desde GitHub Actions: pendiente.
+  - **Desde GitHub Actions (IP de EE. UU., 30/10/2026): 15 de 19 OK.** Fallan con los dos User-Agent:
+
+    | Fuente | Error | Probable causa |
+    |--------|-------|----------------|
+    | Portal de eventos IM | timeout | La infraestructura de la IM no responde a IPs de fuera de Uruguay (igual que con la VPN) |
+    | Sala Zitarrosa | timeout | Idem (subdominio de la IM) |
+    | Ticketmaster.uy | 403 | La plataforma Crowder bloquea IPs extranjeras o de datacenter |
+    | All Access | 403 | Idem (misma plataforma) |
+
+    El Teatro de Verano, aunque es un subdominio de la IM, sí respondió.
+
+### Arquitectura resultante: híbrida y sin costo
+
+- **GitHub Actions** corre las 15 fuentes que responden (todas las demás del MVP).
+- **Un runner en Uruguay** corre las 4 bloqueadas. La opción más prolija es un **runner self-hosted de GitHub Actions** (gratis) instalado en una máquina que esté en Uruguay: los workflows son los mismos y solo cambia `runs-on: self-hosted` en esos jobs. La alternativa es un cron local que haga `git push` del JSON.
+- **La máquina tiene que estar prendida** a la hora programada: una Raspberry Pi o una compu que quede encendida. Si está apagada, el job espera en cola y esas fuentes quedan con el último dato bueno.
+- **Cada fuente guarda su último resultado bueno**, para que una caída o un bloqueo no vacíe la cartelera.
+- **Lo que más importa del runner local es el portal IM** (eventos municipales y gratuitos). Ticketmaster.uy tiene pocos eventos, la Zitarrosa en parte vende por Tickantel y All Access es de la fase 3.
 - **El repo es público** (desde el 30/10/2026): GitHub Actions no tiene límite de minutos y **GitHub Pages es gratis**, así que scrapers y web pueden vivir en el mismo repo sin costo.
 - **Portal IM**: hay que filtrar siempre por `filter[status]=1`; si no, la API devuelve ítems despublicados vacíos ("insufficient authorization").
 - Guardar el HTML o JSON crudo de cada corrida durante unos días: ayuda muchísimo a depurar cuando un parser se rompe.
