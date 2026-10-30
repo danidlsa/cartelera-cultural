@@ -1,0 +1,19 @@
+name: Conectividad de fuentes
+
+# ¿Las fuentes aceptan requests desde los runners de GitHub (EE. UU.)?
+# Corre a mano (workflow_dispatch) o cuando cambia el script.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - scripts/check-fuentes.sh
+      - .github/workflows/check-fuentes.yml
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probar fuentes
+        run: scripts/check-fuentes.sh
