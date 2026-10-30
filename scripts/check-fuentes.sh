@@ -56,18 +56,23 @@ ORIGEN="máquina local"
 } > "$TMP/tabla.md"
 
 fallas=0
+ok_ids=""
+mal=""
 while IFS='|' read -r fase id url marcador; do
   [ -z "$fase" ] && continue
   celdas=""
   for ua in "$UA_PROPIO" "$UA_NAVEGADOR"; do
     read -r code bytes n <<< "$(probar "$url" "$ua" "$marcador")"
+    if [ "$ua" = "$UA_PROPIO" ]; then etiqueta="propio"; else etiqueta="navegador"; fi
     if [ "$code" = "200" ] && [ "$n" -gt 0 ]; then
       celdas="$celdas | ✅ 200"
     else
       celdas="$celdas | ❌ $code (${bytes} B, marcador: $n)"
       fallas=$((fallas + 1))
+      mal="$mal $id[$etiqueta:$code]"
     fi
   done
+  case "$celdas" in *❌*) ;; *) ok_ids="$ok_ids $id" ;; esac
   echo "| $fase | $id$celdas |" >> "$TMP/tabla.md"
 done <<< "$FUENTES"
 
@@ -75,3 +80,8 @@ cat "$TMP/tabla.md"
 [ -n "${GITHUB_STEP_SUMMARY:-}" ] && cat "$TMP/tabla.md" >> "$GITHUB_STEP_SUMMARY"
 echo
 echo "Pruebas fallidas: $fallas"
+
+# Las anotaciones se ven en la página de la corrida sin iniciar sesión (el resumen y los logs no).
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+  echo "::notice title=Conectividad (IP ${PAIS})::OK:${ok_ids:- ninguna} | Fallan:${mal:- ninguna}"
+fi
