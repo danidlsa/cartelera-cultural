@@ -313,10 +313,16 @@ El mismo evento puede llegar por Tickantel, la web de la sala, la Cartelera, el 
 
 ### Arquitectura resultante: híbrida y sin costo
 
-- **GitHub Actions** corre las 15 fuentes que responden (todas las demás del MVP).
-- **Un runner en Uruguay** corre las 4 bloqueadas. La opción más prolija es un **runner self-hosted de GitHub Actions** (gratis) instalado en una máquina que esté en Uruguay: los workflows son los mismos y solo cambia `runs-on: self-hosted` en esos jobs. La alternativa es un cron local que haga `git push` del JSON.
-- **La máquina tiene que estar prendida** a la hora programada: una Raspberry Pi o una compu que quede encendida. Si está apagada, el job espera en cola y esas fuentes quedan con el último dato bueno.
-- **Cada fuente guarda su último resultado bueno**, para que una caída o un bloqueo no vacíe la cartelera.
+- **GitHub Actions** corre las 15 fuentes que responden (todas las demás del MVP) y publica la web.
+- **La Mac en Uruguay corre las 4 bloqueadas** (decisión del 30/10/2026). Está siempre prendida en reposo y se usa los días de semana de 10 a 18 h.
+- **Se usa un job de `launchd`** (el programador de tareas de macOS), **no un runner self-hosted de GitHub**:
+  - **Seguridad:** el repo es público, y GitHub desaconseja runners self-hosted en repos públicos, porque un pull request de un tercero podría ejecutar código en la máquina.
+  - **Reposo:** si la Mac estaba dormida a la hora programada, `launchd` corre el job apenas se despierta. Un runner, en cambio, deja el job en cola y GitHub lo cancela a las 24 horas.
+  - **El job** corre los 4 scrapers, guarda el JSON y hace `git push`. Después, GitHub Actions arma la web con todo junto.
+- **Horario sugerido**: días de semana a las 11 h. Si la Mac está dormida, corre cuando se despierte.
+- **Fines de semana**: esas 4 fuentes quedan con el dato del viernes. No es grave, porque los eventos del finde ya se scrapearon antes. Si hiciera falta, macOS permite programar que la Mac se despierte sola a una hora fija (Configuración del sistema o `pmset`); es un ajuste del sistema que tendrías que hacer vos.
+- **Cada fuente guarda su último resultado bueno**, para que una caída, un bloqueo o la Mac apagada no vacíen la cartelera.
+- **Más adelante**, si molesta depender de la Mac, el mismo job se pasa a una compu vieja con Linux o a una Raspberry Pi (pagando el hardware) sin cambiar el código.
 - **Lo que más importa del runner local es el portal IM** (eventos municipales y gratuitos). Ticketmaster.uy tiene pocos eventos, la Zitarrosa en parte vende por Tickantel y All Access es de la fase 3.
 - **El repo es público** (desde el 30/10/2026): GitHub Actions no tiene límite de minutos y **GitHub Pages es gratis**, así que scrapers y web pueden vivir en el mismo repo sin costo.
 - **Portal IM**: hay que filtrar siempre por `filter[status]=1`; si no, la API devuelve ítems despublicados vacíos ("insufficient authorization").
