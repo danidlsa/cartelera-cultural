@@ -2,7 +2,7 @@
 
 Propuesta para el MVP de la cartelera. Se apoya en [fuentes.md](fuentes.md) y en datos reales de Tickantel, RedTickets y el portal IM revisados el 30/10/2026.
 
-**Estado: propuesta para validar.** Hay una pregunta abierta sobre el stack al final.
+**Estado: aprobado el 31/10/2026.** El lenguaje es **Python** en todo lo que se pueda, y los flyers se muestran.
 
 ---
 
@@ -94,7 +94,7 @@ Lo que se muestra en la cartelera: `data/eventos.json`.
 - **`categoria`** es una lista cerrada: `musica`, `teatro`, `danza`, `humor`, `cine`, `exposicion`, `infantil`, `fiesta`, `festival`, `tour`, `charla`, `otros`. Cada fuente traduce sus categorías a esta lista.
 - **`funciones`** es la unidad de tiempo: un evento con 10 funciones es **un** evento, no diez. La cartelera "hoy" muestra los eventos que tienen alguna función hoy.
 - **`descripcion_corta`**: como máximo unos 300 caracteres, para no republicar textos ajenos. El resto se lee en la fuente.
-- **`imagen_url`** queda guardada, pero **falta decidir si se muestra** (son flyers promocionales de terceros).
+- **`imagen_url`**: **el flyer se muestra** (decisión). Se enlaza la imagen original de la fuente, sin copiarla al repo; así el repo no crece y el flyer siempre lleva a la fuente. Si una imagen no carga (porque el sitio bloquea que se muestre desde otra web o porque la borraron), la web muestra un placeholder por categoría.
 - **`region`**: `montevideo` o `buenos_aires`. Los eventos del interior se descartan al scrapear.
 
 ### `Ciclo` (opcional)
@@ -171,9 +171,51 @@ cartelera-cultural/
 
 ---
 
+## Almacenamiento y retención
+
+**No hay base de datos con servidor. La "base" son archivos JSON en la rama `datos` del repo.**
+
+- **Por qué alcanza**: la cartelera activa son del orden de **1.000 a 2.000 eventos**, o sea unos pocos MB de JSON. La web los lee directamente y filtra en el navegador. No hay usuarios, ni escrituras desde la web, ni consultas complejas: no hace falta un motor de base de datos.
+- **Qué hay en `datos`**:
+  - `fuentes/<fuente>.json`: el último resultado bueno de cada scraper.
+  - `eventos.json`, `lugares.json` y `ciclos.json`: la cartelera unificada.
+- **Limpieza automática**: en cada unificación, **se descartan las funciones que ya pasaron** (con un margen de un día) y **los eventos que se quedan sin funciones futuras**. Los archivos siempre tienen solo lo vigente, así que no crecen con el tiempo.
+- **El historial es gratis**: cada corrida es un commit en `datos`, así que lo que sale de los archivos sigue en el historial de git. Se puede consultar cualquier día pasado sin guardar un archivo histórico aparte.
+- **El tamaño del repo**: git guarda solo las diferencias, comprimidas, entre un commit y el siguiente. Con dos corridas por día, la rama `datos` crecería **del orden de decenas de MB por año**, muy lejos del límite recomendado por GitHub (1 GB). Si algún día pesa demasiado, se puede **reiniciar el historial de `datos`** (los datos se regeneran solos), sin tocar `main`.
+- **Cuándo cambiaría esto**: si en el futuro hubiera funciones con usuarios (favoritos, avisos por mail) o estadísticas históricas pesadas, se puede sumar **SQLite** como archivo o la capa gratuita de **Supabase**. Para el MVP no hace falta.
+  - Ojo con la capa gratuita de Supabase: **pausa los proyectos sin actividad** después de un tiempo.
+
+---
+
+## Seguridad del job en la Mac
+
+**El riesgo es bajo**, y se puede bajar más con algunas reglas.
+
+### Qué hace el job
+
+Una vez por día, `launchd` ejecuta código **de este repo**, que hace pedidos HTTP **salientes** a 4 sitios públicos, guarda JSON y hace `git push`.
+
+- **No abre puertos ni recibe conexiones.**
+- **Nadie puede ejecutar algo en la Mac desde GitHub.** Por eso se eligió `launchd` y no un runner self-hosted.
+
+### Riesgos y cómo se cubren
+
+| Riesgo | Qué podría pasar | Cómo se cubre |
+|--------|------------------|---------------|
+| **Código malicioso en el repo** | Si alguien lograra meter código en `main`, la Mac lo ejecutaría con tus permisos (acceso a tus archivos). | Solo vos tenés permiso de escritura. **No se mergean pull requests de terceros sin revisarlos.** Se protege `main` con una regla de GitHub para que no se pueda pushear directo. El job corre siempre desde `main`, no desde otras ramas. |
+| **Una dependencia comprometida** (un paquete de Python malicioso) | Lo mismo: código ajeno corriendo en tu Mac. | **Pocas dependencias** y conocidas (`httpx`, `selectolax`, `pydantic`). **Versiones fijadas con hash** (`uv.lock`), así que una actualización maliciosa no entra sola. Un entorno virtual aislado. |
+| **Contenido hostil en los sitios scrapeados** | Una página armada para atacar al que la lee. | El job **solo lee JSON y HTML como texto**: no ejecuta JavaScript, no usa navegador headless y no hace nada parecido a `eval` o `pickle` con lo que baja. Parsear texto en Python no ejecuta código. Las 4 fuentes de la Mac son APIs JSON o HTML simple. |
+| **Credenciales de GitHub demasiado amplias** | Hoy `git push` usa tus credenciales guardadas, que dan acceso a **todos** tus repos. | El job usa una **deploy key** (una llave SSH) **solo para este repo**. Si se filtrara, solo afectaría a `cartelera-cultural`, y la regla sobre `main` impide que se use para cambiar el código. |
+| **Que se suba algo de más** | Un log con rutas o datos de tu Mac terminando en el repo público. | El job hace `git add` **solo** de sus 4 archivos en `datos/fuentes/` y nunca de otra cosa. Los logs quedan en la Mac. |
+| **Tu IP de casa** | Los 4 sitios ven pedidos diarios desde tu IP. Si alguno la bloqueara, también podría afectarte al navegar ese sitio. | Volumen muy bajo (una vez por día), User-Agent identificable y pausas entre pedidos. Es poco probable. |
+
+**Opcional, si querés más aislamiento**: correr el job con un **usuario de macOS aparte**, sin acceso a tus documentos. No me parece necesario para empezar.
+
+---
+
 ## Stack
 
-### Propuesta: Python para scrapers y datos, sitio estático simple
+### Python para scrapers y datos, sitio estático simple (decisión)
 
 | Parte | Herramienta | Por qué |
 |-------|-------------|---------|
@@ -181,14 +223,15 @@ cartelera-cultural/
 | HTML | `selectolax` | Rápido y simple. |
 | JSON-LD | `extruct` | Lo usan Tickantel, Ticketmaster, Livepass y Fever. |
 | Esquema | `pydantic` | Valida que cada fuente cumpla el modelo de datos. |
+| Dependencias | `uv` | Instala y fija versiones exactas, con hashes (ver Seguridad). |
 | Deduplicación | `rapidfuzz` | Similitud de títulos. |
 | Tests | `pytest` | Contra el HTML guardado. |
 | Headless (fase 3) | `playwright` | Para Movistar Arena y Primavera Sound. |
-| Web | **Astro**, o HTML con JavaScript simple | Lee `eventos.json` y filtra en el navegador. Sin servidor, gratis en GitHub Pages. |
+| Web | **Jinja2** (genera HTML estático) y un poco de JavaScript para los filtros | Todo el build en Python. Sin servidor, gratis en GitHub Pages. |
 
-**Por qué Python:** tiene el mejor ecosistema para scraping y limpieza de datos.
+**Regla: Python siempre que se pueda.** Es el lenguaje que mejor conocés, y además tiene el mejor ecosistema para scraping y limpieza de datos.
 
-**La alternativa** es TypeScript de punta a punta (`fetch`, `cheerio`, `zod`, Playwright y Astro), con un solo lenguaje también en la web. Técnicamente las dos funcionan igual de bien. **Conviene elegir el lenguaje que te resulte más cómodo para mantenerlo.**
+**La web** también se puede armar en Python para no sumar otro lenguaje: un script que genera páginas HTML con plantillas **Jinja2** a partir de `eventos.json`. Solo los filtros del navegador (categoría, fecha) necesitan unas pocas líneas de JavaScript, que es inevitable en una web. Astro queda descartado.
 
 ---
 
@@ -206,5 +249,4 @@ Después se suman de a una las demás fuentes del MVP (portal IM con el job de l
 
 ## Preguntas abiertas
 
-1. **Stack**: ¿Python (propuesta) o TypeScript? Depende sobre todo de cuál te resulte más fácil de leer y mantener.
-2. **Imágenes**: ¿mostramos el flyer de cada evento (enlazado a la fuente) o solo texto? Se puede decidir más adelante.
+Ninguna por ahora.
